@@ -166,7 +166,7 @@ class AppTheme {
         elevation: 0,
         height: 72,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        indicatorColor: colorScheme.primaryContainer,
+        indicatorColor: colorScheme.surfaceContainerHigh,
         labelTextStyle: WidgetStatePropertyAll(
           TextStyle(
             fontSize: 12,

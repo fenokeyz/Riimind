@@ -1,51 +1,40 @@
 import 'package:flutter/material.dart';
 
-/// Home screen — placeholder for Feature 1.
+import '../../input/presentation/widgets/clipboard_banner.dart';
+import '../../input/presentation/widgets/extract_event_button.dart';
+import '../../input/presentation/widgets/input_action_row.dart';
+import '../../input/presentation/widgets/input_text_field.dart';
+
+/// Home screen — Feature 2.
 ///
-/// Real content (paste, parse, review) lands in later features.
+/// Layout (top to bottom):
+/// 1. AppBar
+/// 2. SafeArea → scrollable column:
+///    - Clipboard banner (only when clipboard has text and not dismissed)
+///    - Large multiline input field
+///    - Paste / Clear row
+///    - Extract Event button
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Riimind'),
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Riimind',
-                style: textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Turn any message into a calendar event.',
-                style: textTheme.bodyLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              Text(
-                'Feature coming soon',
-                style: textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.primary,
-                  letterSpacing: 0.5,
-                ),
-              ),
+              ClipboardBanner(),
+              InputTextField(),
+              SizedBox(height: 16),
+              InputActionRow(),
+              SizedBox(height: 16),
+              ExtractEventButton(),
             ],
           ),
         ),
