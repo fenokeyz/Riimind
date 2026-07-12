@@ -8,48 +8,20 @@ import '../providers/input_providers.dart';
 /// Reads its [TextEditingController] from [textControllerProvider] so the
 /// controller is shared across the banner's Import action, the Paste button,
 /// and the Clear button — they all read/write the same instance.
-class InputTextField extends ConsumerStatefulWidget {
+class InputTextField extends ConsumerWidget {
   const InputTextField({super.key});
 
   @override
-  ConsumerState<InputTextField> createState() => _InputTextFieldState();
-}
-
-class _InputTextFieldState extends ConsumerState<InputTextField> {
-  late final TextEditingController _controller;
-  late final VoidCallback _listener;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = ref.read(textControllerProvider);
-
-    // Re-render this widget when the controller's text changes so the
-    // Clear button can animate in/out. We do not call setState inside
-    // the listener — instead we listen to Riverpod's inputTextProvider
-    // via ref.listen in build.
-    _listener = () {
-      if (mounted) setState(() {});
-    };
-    _controller.addListener(_listener);
-  }
-
-  @override
-  void dispose() {
-    _controller.removeListener(_listener);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final hasText = _controller.text.isNotEmpty;
+    final controller = ref.watch(textControllerProvider);
+    final hasText = ref.watch(inputTextProvider).isNotEmpty;
 
     return Stack(
       children: [
         TextField(
-          controller: _controller,
+          controller: controller,
           minLines: 6,
           maxLines: 12,
           textInputAction: TextInputAction.newline,
@@ -80,7 +52,7 @@ class _InputTextFieldState extends ConsumerState<InputTextField> {
                 child: InkWell(
                   customBorder: const CircleBorder(),
                   onTap: () {
-                    _controller.clear();
+                    controller.clear();
                     // Move focus out so the keyboard closes if it was open.
                     FocusScope.of(context).unfocus();
                   },

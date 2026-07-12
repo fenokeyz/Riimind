@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/home/presentation/home_screen.dart';
+import '../../features/parser/models/parsed_event.dart';
+import '../../features/parser/presentation/preview_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 
 /// App router with bottom navigation (StatefulShellRoute) for Home + Settings.
@@ -14,6 +16,7 @@ class AppRouter {
 
   static const String homeRoute = '/';
   static const String settingsRoute = '/settings';
+  static const String previewRoute = '/preview';
 
   static final GlobalKey<NavigatorState> _rootNavigatorKey =
       GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -52,6 +55,17 @@ class AppRouter {
             ],
           ),
         ],
+      ),
+      // Full-screen routes that overlay the bottom-nav shell.
+      // Lives on the root navigator so it pushes above the shell.
+      GoRoute(
+        path: previewRoute,
+        name: 'preview',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) {
+          final event = state.extra as ParsedEvent?;
+          return PreviewScreen(event: event);
+        },
       ),
     ],
   );

@@ -2,26 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Holds the multiline text the user is composing on the Home screen.
+/// Current text in the input.
 ///
-/// This provider owns the [TextEditingController] for the input field. The
-/// controller is disposed automatically when the [ProviderContainer] that
-/// created it is disposed, which happens when the app shuts down. We do not
-/// keep the controller in widget state because [TextEditingController] is not
-/// a value type — multiple widget rebuilds would create duplicate listeners.
+/// Updated by [textControllerProvider] whenever its controller changes, so
+/// widgets that watch this provider rebuild for both typed and programmatic
+/// edits (Import, Paste, and Clear).
+final inputTextProvider = StateProvider<String>((ref) => '');
+
+/// Holds the multiline text controller shared by the Home screen actions.
+///
+/// The controller is disposed automatically when the [ProviderContainer] that
+/// created it is disposed. Keeping this instance in a provider ensures the
+/// input field, Import, Paste, and Clear actions all use the same controller.
 final textControllerProvider = Provider<TextEditingController>((ref) {
   final controller = TextEditingController();
-  ref.onDispose(controller.dispose);
-  return controller;
-});
+  void syncInputText() {
+    ref.read(inputTextProvider.notifier).state = controller.text;
+  }
 
-/// Read-only convenience for the current text in the input.
-///
-/// Listens to the controller and rebuilds dependents (e.g. the Extract button
-/// and the Clear button) whenever the text changes.
-final inputTextProvider = Provider<String>((ref) {
-  final controller = ref.watch(textControllerProvider);
-  return controller.text;
+  controller.addListener(syncInputText);
+  ref.onDispose(() {
+    controller.removeListener(syncInputText);
+    controller.dispose();
+  });
+  return controller;
 });
 
 /// Snapshot of the device clipboard, read once on app start.

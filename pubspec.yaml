@@ -44,6 +44,12 @@ dependencies:
   # Environment variable loading (Gemini API key, etc.)
   flutter_dotenv: ^5.1.0
 
+  # Gemini SDK for natural-language event extraction
+  google_generative_ai: ^0.4.6
+
+  # Opens the native calendar event editor for user review before saving.
+  add_2_calendar: ^3.1.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

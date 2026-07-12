@@ -1,40 +1,135 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../parser/presentation/providers/parser_providers.dart';
 import '../providers/input_providers.dart';
 
 /// Primary CTA on the Home screen: "Extract Event".
 ///
-/// Disabled when the input is empty. On tap, currently shows a SnackBar to
-/// indicate the wiring is coming in Feature 4 — no Gemini call yet.
-class ExtractEventButton extends ConsumerWidget {
+/// Starts a fresh [parseEventProvider] request for each tap. While Gemini is
+/// working, the button shows a spinner and the label changes to
+/// "Understanding your message...". On success, the parsed event is pushed
+/// onto `/preview`. On failure, a Material 3 AlertDialog explains that
+/// Riimind couldn't extract the event and offers "Edit message" or
+/// "Try again".
+class ExtractEventButton extends ConsumerStatefulWidget {
   const ExtractEventButton({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hasText = ref.watch(inputTextProvider).trim().isNotEmpty;
+  ConsumerState<ExtractEventButton> createState() => _ExtractEventButtonState();
+}
+
+class _ExtractEventButtonState extends ConsumerState<ExtractEventButton> {
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = ref.watch(inputTextProvider);
+    final hasText = text.trim().isNotEmpty;
 
     return SizedBox(
       width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: hasText ? () => _onPressed(context) : null,
-        icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-        label: const Text('Extract Event'),
+      child: FilledButton(
+        onPressed: (hasText && !_isLoading) ? () => _onPressed(text) : null,
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 18),
         ),
+        child: _isLoading
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        theme.colorScheme.onPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('Understanding your message...'),
+                ],
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  Icon(Icons.auto_awesome_rounded, size: 18),
+                  SizedBox(width: 10),
+                  Text('Extract Event'),
+                ],
+              ),
       ),
     );
   }
 
-  void _onPressed(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('Coming soon — Gemini wiring arrives in Feature 4.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+  Future<void> _onPressed(String text) async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    Object? error;
+    try {
+      // A FutureProvider family caches completed values by its argument.
+      // Invalidate this message's previous result so retries always invoke
+      // Gemini instead of reusing a prior AsyncError or successful response.
+      ref.invalidate(parseEventProvider(text));
+      final event = await ref.read(parseEventProvider(text).future);
+
+      if (mounted) {
+        GoRouter.of(context).push('/preview', extra: event);
+      }
+    } catch (caughtError) {
+      error = caughtError;
+    } finally {
+      // This must run for every success, Gemini failure, parse failure, or
+      // unexpected exception so the CTA is never left disabled.
+      if (mounted) setState(() => _isLoading = false);
+    }
+
+    if (mounted && error != null) {
+      _showErrorDialog(error);
+    }
+  }
+
+  void _showErrorDialog(Object error) {
+    final message = kDebugMode
+        ? error.toString()
+        : 'Something went wrong. Please try again.';
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Couldn't understand this message"),
+          content: Text(
+            'Riimind couldn\'t confidently extract an event from this message. '
+            'Please edit the message and try again.\n\n$message',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('Edit message'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                final text = ref.read(inputTextProvider);
+                if (text.trim().isNotEmpty) {
+                  _onPressed(text);
+                }
+              },
+              child: const Text('Try again'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
