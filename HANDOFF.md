@@ -1,82 +1,100 @@
 # Riimind handoff
 
+## Project overview
+
+Riimind is an Android-first Flutter app that converts a natural-language message into a calendar event. Users paste or share text, Gemini extracts event details, the user edits the result, and the app opens the native calendar editor for final review and saving.
+
 ## Current status
 
-Features 1–3 are complete and verified. The app accepts natural-language text, extracts an event with Gemini, presents a review screen, and opens the native calendar editor for user confirmation. Feature 4 has not been started.
+The MVP (Features 1–8) is complete. There is no new feature work outstanding from the current specification.
 
-## Architecture overview
+## Architecture
 
-Riimind uses a feature-first Flutter structure. Presentation widgets live beside Riverpod providers, while parser domain data and Gemini integration are separated into `models` and `services`. `go_router` owns navigation, and `app.dart` is the composition root for theme and router configuration.
+The project uses a feature-first structure. Widgets and Riverpod providers live in each feature's presentation layer; parser data and Gemini integration are isolated in `models` and `services`. `app.dart` composes Material 3 theme and GoRouter, while `main.dart` loads environment values and creates the root `ProviderScope`.
 
 ## Folder structure
 
 ```text
 lib/
-  core/                 # Theme and router
+  core/                         # App theme and GoRouter configuration
   features/
-    home/               # Home screen composition
-    input/              # Text input, clipboard actions, input state
-    parser/             # Parsed event model, Gemini service, preview UI
-    settings/           # Settings screen placeholder
-  app.dart              # MaterialApp configuration
-  main.dart             # Environment loading and ProviderScope
-test/features/          # Parser and input/provider/widget tests
+    home/presentation/          # Existing home screen and share intake lifecycle
+    input/
+      presentation/             # Input widgets and Riverpod input state
+      services/                 # Android share-intent adapter
+    parser/
+      models/                   # ParsedEvent
+      services/                 # Gemini extraction and error classification
+      presentation/             # Editable review form and parser providers
+    settings/presentation/      # Settings placeholder
+  app.dart
+  main.dart
+test/features/                  # Input, parser, and preview tests
 ```
 
-## Packages
+## Packages used
 
 - `flutter_riverpod`: shared input state and injectable parser service.
-- `go_router`: declarative shell and preview navigation.
-- `flutter_dotenv`: loads the Gemini key from `.env`.
-- `google_generative_ai`: Gemini natural-language event extraction.
-- `add_2_calendar`: opens the platform calendar editor before an event is saved.
-- `cupertino_icons`: standard iOS-style icon set.
+- `go_router`: bottom-navigation shell and full-screen preview navigation.
+- `flutter_dotenv`: loads the Gemini API key before app startup.
+- `google_generative_ai`: structured natural-language event extraction.
+- `add_2_calendar`: native Android/iOS calendar insert/editor flow.
+- `receive_sharing_intent`: receives Android plain-text share intents.
+- `cupertino_icons`: iOS icon support.
 
-## Environment setup
+## Environment
 
-Copy `.env.example` to `.env` and set:
+Copy `.env.example` to `.env` and configure:
 
 ```dotenv
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-`.env` is intentionally ignored by Git and is listed as a Flutter asset because it is loaded before the app starts.
+`.env` is ignored by Git and is included as a Flutter asset for startup loading.
 
 ## Completed features
 
-1. App shell, Material 3 theme, Home/Settings navigation.
-2. Multiline event input, clipboard detection/import, paste, clear, and shared input state.
-3. Gemini extraction, JSON-to-`ParsedEvent` mapping, loading/error states, event preview, and native calendar-editor handoff.
+1. Material 3 application shell, theme, bottom navigation, and Settings screen.
+2. Multiline input with clipboard detection, import, paste, clear, and Riverpod state synchronization.
+3. Gemini extraction, JSON parsing, loading/error handling, and event preview navigation.
+4. Calendar handoff through `add_2_calendar`, including title, description, location, all-day events, a one-hour timed default, platform permission handling, and success/failure feedback.
+5. Editable preview form with text inputs plus native date and time pickers. Continue always reads the edited state.
+6. Android `ACTION_SEND` text sharing directly into the existing Home input.
+7. Material 3 polish: consistent cards, picker affordances, disabled states, loading indicators, and focused dialogs.
+8. Stronger Gemini instructions for relative dates, weekday expressions, common time expressions, all-day events, and non-hallucination.
+
+## Important implementation decisions
+
+- Input changes use one shared `TextEditingController`; `inputTextProvider` mirrors it so typing, clipboard actions, and sharing stay synchronized.
+- Android shares are adapted to text in `ShareIntentService`, then fed into the existing input state—there is no second app entry point or Home screen.
+- Calendar integration delegates saving to the platform editor. Android opens `ACTION_INSERT` without app calendar permission; iOS requests calendar access only when the editor needs it.
+- An absent time creates an all-day event. A timed event defaults to one hour because the parser does not capture an end time.
+- Gemini errors are classified internally and rendered as friendly messages; raw errors and stack traces are not shown to users.
 
 ## Known limitations
 
-- The Gemini key is packaged in the client app; production use should proxy model calls through a secure backend.
-- Parsed fields are read-only; correcting an individual field requires editing the original message and extracting again.
-- Calendar events use a one-hour default duration for timed events and a one-day duration for all-day events.
-- No persistence, event history, or offline extraction is implemented.
+- The Gemini key is in the client app. A production release should call Gemini through a secure backend.
+- Recurring language such as “every Monday” is preserved for review in the description; recurrence rules are not yet created in the device calendar.
+- Calendar completion is controlled by the native editor, so Riimind can confirm that it opened the editor but cannot verify that the user tapped Save on Android.
+- No event persistence/history, login, sync, or offline parsing is included (all are outside the MVP scope).
 
 ## Remaining roadmap
 
-Feature 4 is not yet defined or implemented. Likely follow-up work includes editable preview fields, secure server-side AI access, validation/duration controls, and persistence/history.
+- Secure backend proxy for Gemini requests.
+- Recurrence rule editing and end-time/duration controls.
+- Saved event history and optional cloud sync.
+- iOS share extension, if iOS sharing is required later.
 
-## How to run
+## Run the project
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-For verification:
+Verify before handoff:
 
 ```bash
 flutter analyze
 flutter test
 ```
-
-## Important implementation decisions
-
-- `inputTextProvider` mirrors the shared `TextEditingController`, so typing and programmatic clipboard updates keep every dependent widget in sync.
-- Each extraction invalidates its keyed `FutureProvider` first, ensuring retries make a fresh Gemini request instead of reusing a cached result or error.
-- Gemini is instructed to return JSON only; the service still defensively handles fenced or prose-wrapped JSON responses.
-- The preview route is presented on the root navigator above the bottom-navigation shell.
-- Riimind delegates final saving to the native calendar editor; it does not write events silently.

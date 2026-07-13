@@ -50,6 +50,9 @@ dependencies:
   # Opens the native calendar event editor for user review before saving.
   add_2_calendar: ^3.1.1
 
+  # Receives plain-text Android share intents in the existing Home screen.
+  receive_sharing_intent: ^1.9.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

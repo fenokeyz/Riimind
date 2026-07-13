@@ -23,7 +23,8 @@ class ClipboardBanner extends ConsumerWidget {
     final dismissed = ref.watch(clipboardDismissedProvider);
 
     // Decide whether to show the banner.
-    final showBanner = !dismissed &&
+    final showBanner =
+        !dismissed &&
         clipboardAsync.maybeWhen(
           data: (text) => text != null && text.trim().isNotEmpty,
           orElse: () => false,
@@ -37,8 +38,7 @@ class ClipboardBanner extends ConsumerWidget {
               padding: const EdgeInsets.only(bottom: 16),
               child: _BannerCard(
                 text: clipboardAsync.value!,
-                onImport: () =>
-                    _onImport(ref, clipboardAsync.value!),
+                onImport: () => _onImport(ref, clipboardAsync.value!),
                 onDismiss: () =>
                     ref.read(clipboardDismissedProvider.notifier).state = true,
                 colorScheme: colorScheme,
@@ -50,9 +50,7 @@ class ClipboardBanner extends ConsumerWidget {
   }
 
   void _onImport(WidgetRef ref, String text) {
-    final controller = ref.read(textControllerProvider);
-    controller.text = text;
-    controller.selection = TextSelection.collapsed(offset: text.length);
+    replaceInputText(ref, text);
     // Hide the banner after importing.
     ref.read(clipboardDismissedProvider.notifier).state = true;
   }

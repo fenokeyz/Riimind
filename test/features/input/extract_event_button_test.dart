@@ -29,7 +29,7 @@ void main() {
 
     expect(service.calls, 1);
     expect(find.text("Couldn't understand this message"), findsOneWidget);
-    expect(find.textContaining('Simulated request failure.'), findsOneWidget);
+    expect(find.textContaining('Gemini returned an unreadable result.'), findsOneWidget);
 
     await tester.tap(find.text('Edit message'));
     await tester.pump();

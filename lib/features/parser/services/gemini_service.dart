@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -7,58 +8,73 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 
 import '../models/parsed_event.dart';
 
-/// Thrown when the parser can't produce a usable [ParsedEvent].
+enum GeminiFailureKind {
+  missingApiKey,
+  invalidApiKey,
+  network,
+  unavailable,
+  malformedResponse,
+  noEventDetected,
+}
+
+/// A parser failure that can be rendered as a friendly user-facing message.
 class GeminiParseException implements Exception {
-  GeminiParseException(this.message);
+  GeminiParseException(
+    this.message, {
+    this.kind = GeminiFailureKind.malformedResponse,
+  });
+
   final String message;
+  final GeminiFailureKind kind;
+
   @override
   String toString() => message;
 }
 
-/// Wraps the Gemini SDK. The whole API surface is one method: extract a
-/// [ParsedEvent] from a free-form string of text.
+/// Wraps Gemini natural-language event extraction.
 class GeminiService {
   GeminiService({String? apiKey})
     : _apiKey = apiKey ?? dotenv.env['GEMINI_API_KEY'] ?? '';
 
   static const String _modelName = 'gemini-3.5-flash';
-
   final String _apiKey;
 
-  /// Prompt that locks Gemini into JSON-only output.
-  ///
-  /// Combined with `responseMimeType: application/json` this is the cleanest
-  /// way to get strict JSON out of Gemini — no markdown, no code fences, no
-  /// preamble. The system instruction is short and explicit.
   static const String _systemInstruction = '''
-You are an event-extraction assistant.
-Extract a calendar event from the user's message and respond with ONLY a JSON object.
+You are an event-extraction assistant. Extract one calendar event from the
+user's message and respond with ONLY a JSON object.
 
 Today's local date and the user's current local timezone are always provided
-in the user message. Use them to resolve relative phrases like "tomorrow",
-"next Friday", "tonight", "in 2 hours".
+in the user message. Use them to resolve relative phrases.
 
 Return JSON with these exact keys and nothing else:
 - "title": short event title (string, required)
-- "description": supporting detail, never include the user's exact phrasing unless useful (string, may be empty)
+- "description": supporting detail, including recurring intent when present (string, may be empty)
 - "date": event date in ISO 8601 (YYYY-MM-DD), resolved in the user's local timezone (string, may be empty if unknown)
-- "time": event time in 24-hour HH:mm (string, may be empty if unknown)
+- "time": event time in 24-hour HH:mm (string, may be empty; an empty time means an all-day event)
 - "location": venue, address, or place name (string, may be empty)
 
 Rules:
-- Never invent missing information. If you are uncertain, leave the field empty instead of guessing.
-- "time" must be 24-hour HH:mm. Convert "1pm" -> "13:00", "11:59 PM" -> "23:59".
-- Always return valid JSON only. Never return markdown. Never return explanations. Never return code fences.
+- Never invent missing information. If uncertain, leave the field empty.
+- Resolve "tomorrow" to the next local calendar day and "tonight" to today's date. Do not invent a clock time for "tonight".
+- Resolve weekday references such as "next Monday" and "next Friday" to their next matching local date. For "every Monday", use the next Monday as the date and preserve the recurring intent in description.
+- "time" must be 24-hour HH:mm. Convert "noon" to "12:00", "midnight" to "00:00", and "3pm" to "15:00". Retain an explicit "15:00".
+- "evening", "morning", and similar vague parts of day do not specify a time; leave time empty unless a clock time is provided.
+- If the message explicitly says all-day or supplies no time, leave time empty.
+- Always return valid JSON only. Never return markdown, explanations, or code fences.
 ''';
 
   Future<ParsedEvent> extractEvent(String text) async {
     if (_apiKey.isEmpty) {
       throw GeminiParseException(
-        'Gemini API key missing. Add GEMINI_API_KEY to your .env file.',
+        'Gemini API key missing.',
+        kind: GeminiFailureKind.missingApiKey,
       );
     }
     if (text.trim().isEmpty) {
-      throw GeminiParseException('Input text is empty.');
+      throw GeminiParseException(
+        'Input text is empty.',
+        kind: GeminiFailureKind.noEventDetected,
+      );
     }
 
     final model = GenerativeModel(
@@ -68,105 +84,107 @@ Rules:
       generationConfig: GenerationConfig(
         responseMimeType: 'application/json',
         temperature: 0.1,
-        // The model will be told exactly how many keys we want; this is a
-        // safety cap that keeps responses from being absurdly long.
         maxOutputTokens: 512,
       ),
     );
-
     final now = DateTime.now();
-    final today = _formatDate(now);
-    final timezone = _localTimezone();
-    final userPrompt =
-        'today: $today\ntimezone: $timezone\nmessage: ${text.trim()}';
+    final prompt =
+        'today: ${_formatDate(now)}\ntimezone: ${_localTimezone()}\nmessage: ${text.trim()}';
 
-    final response = await model.generateContent([Content.text(userPrompt)]);
-    final raw = response.text;
-    if (raw == null || raw.trim().isEmpty) {
-      throw GeminiParseException('Gemini returned an empty response.');
+    final GenerateContentResponse response;
+    try {
+      response = await model.generateContent([Content.text(prompt)]);
+    } on InvalidApiKey {
+      throw GeminiParseException(
+        'The Gemini API key was rejected.',
+        kind: GeminiFailureKind.invalidApiKey,
+      );
+    } on SocketException {
+      throw GeminiParseException(
+        'No network connection is available.',
+        kind: GeminiFailureKind.network,
+      );
+    } on TimeoutException {
+      throw GeminiParseException(
+        'Gemini timed out.',
+        kind: GeminiFailureKind.unavailable,
+      );
+    } on GenerativeAIException {
+      throw GeminiParseException(
+        'Gemini is unavailable.',
+        kind: GeminiFailureKind.unavailable,
+      );
     }
 
-    return _parseJson(raw);
+    final raw = response.text;
+    if (raw == null || raw.trim().isEmpty) {
+      throw GeminiParseException(
+        'Gemini returned an empty response.',
+        kind: GeminiFailureKind.noEventDetected,
+      );
+    }
+
+    final event = _parseJson(raw);
+    if (event.isEmpty) {
+      throw GeminiParseException(
+        'No event details were found.',
+        kind: GeminiFailureKind.noEventDetected,
+      );
+    }
+    return event;
   }
 
-  /// Parse a JSON string from Gemini into a [ParsedEvent].
-  ///
-  /// Gemini should already return pure JSON because we set
-  /// `responseMimeType: 'application/json'`, but we still defend against:
-  /// - accidental markdown fences (```json ... ```)
-  /// - leading/trailing prose
-  /// - shape mismatches (handled by [ParsedEvent.fromJson])
   ParsedEvent _parseJson(String raw) {
     var cleaned = raw.trim();
-
-    // Strip code fences if Gemini wrapped the JSON anyway.
     final fenceMatch = RegExp(
       r'```(?:json)?\s*(.*?)\s*```',
       dotAll: true,
     ).firstMatch(cleaned);
-    if (fenceMatch != null) {
-      cleaned = fenceMatch.group(1)!.trim();
-    }
+    if (fenceMatch != null) cleaned = fenceMatch.group(1)!.trim();
 
-    // If the model added prose around the JSON, grab the first {...} block.
     if (!cleaned.startsWith('{')) {
-      // A pure JSON array (top-level `[`) is a real failure mode we want to
-      // surface as an exception, not silently turn into the first object
-      // inside the array.
       if (cleaned.startsWith('[')) {
         throw GeminiParseException(
-          'Unexpected response shape: expected a JSON object.',
+          'Expected a JSON object.',
+          kind: GeminiFailureKind.malformedResponse,
         );
       }
-      final objMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(cleaned);
-      if (objMatch != null) cleaned = objMatch.group(0)!;
+      final objectMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(cleaned);
+      if (objectMatch != null) cleaned = objectMatch.group(0)!;
     }
 
     final Object? decoded;
     try {
       decoded = jsonDecode(cleaned);
-    } on FormatException catch (e) {
+    } on FormatException {
       throw GeminiParseException(
-        'Couldn\'t parse the response as JSON. ${e.message}',
+        'Could not parse Gemini JSON.',
+        kind: GeminiFailureKind.malformedResponse,
       );
     }
-
     if (decoded is! Map<String, dynamic>) {
       throw GeminiParseException(
-        'Unexpected response shape: expected a JSON object.',
+        'Expected a JSON object.',
+        kind: GeminiFailureKind.malformedResponse,
       );
     }
-
     return ParsedEvent.fromJson(decoded);
   }
 
-  static String _formatDate(DateTime dt) {
-    final y = dt.year.toString().padLeft(4, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
+  static String _formatDate(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
-  /// Best-effort local timezone name. `DateTime.now().timeZoneName` returns
-  /// abbreviations like "PDT" on some platforms; on Android the
-  /// [Platform.localeName] gives "en_US" but not the IANA zone. We fall back
-  /// to the abbreviation when the IANA name isn't available.
   static String _localTimezone() {
-    final offset = DateTime.now().timeZoneOffset;
+    final now = DateTime.now();
+    final offset = now.timeZoneOffset;
     final sign = offset.isNegative ? '-' : '+';
-    final h = offset.inHours.abs().toString().padLeft(2, '0');
-    final m = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
-    final abbrev = DateTime.now().timeZoneName;
-    return '$abbrev (UTC$sign$h:$m)';
+    final hours = offset.inHours.abs().toString().padLeft(2, '0');
+    final minutes = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    return '${now.timeZoneName} (UTC$sign$hours:$minutes)';
   }
-
-  // --- Test seams. These expose the private helpers above so the unit tests
-  // can exercise the JSON-cleaning and date-formatting logic without going
-  // through a real network call. Each one is a one-line forwarder and the
-  // production code path is unchanged.
 
   @visibleForTesting
-  static String formatDateForTest(DateTime dt) => _formatDate(dt);
+  static String formatDateForTest(DateTime date) => _formatDate(date);
 
   @visibleForTesting
   static String localTimezoneForTest() => _localTimezone();

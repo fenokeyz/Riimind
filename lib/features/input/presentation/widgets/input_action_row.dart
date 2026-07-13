@@ -67,9 +67,7 @@ class InputActionRow extends ConsumerWidget {
     final text = data?.text;
     if (text == null || text.isEmpty) return;
 
-    final controller = ref.read(textControllerProvider);
-    controller.text = text;
-    controller.selection = TextSelection.collapsed(offset: text.length);
+    replaceInputText(ref, text);
 
     // Hide the clipboard banner if it was visible.
     ref.read(clipboardDismissedProvider.notifier).state = true;

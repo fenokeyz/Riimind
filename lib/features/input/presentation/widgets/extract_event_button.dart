@@ -1,9 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../parser/presentation/providers/parser_providers.dart';
+import '../../../parser/services/gemini_service.dart';
 import '../providers/input_providers.dart';
 
 /// Primary CTA on the Home screen: "Extract Event".
@@ -97,19 +97,14 @@ class _ExtractEventButtonState extends ConsumerState<ExtractEventButton> {
   }
 
   void _showErrorDialog(Object error) {
-    final message = kDebugMode
-        ? error.toString()
-        : 'Something went wrong. Please try again.';
+    final message = _friendlyErrorMessage(error);
 
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text("Couldn't understand this message"),
-          content: Text(
-            'Riimind couldn\'t confidently extract an event from this message. '
-            'Please edit the message and try again.\n\n$message',
-          ),
+          content: Text('$message\n\nYou can edit the message and try again.'),
           actions: [
             TextButton(
               onPressed: () {
@@ -131,5 +126,26 @@ class _ExtractEventButtonState extends ConsumerState<ExtractEventButton> {
         );
       },
     );
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    if (error is! GeminiParseException) {
+      return 'We couldn\'t reach Gemini. Check your connection and try again.';
+    }
+
+    return switch (error.kind) {
+      GeminiFailureKind.missingApiKey =>
+        'Gemini is not configured yet. Add GEMINI_API_KEY to your .env file.',
+      GeminiFailureKind.invalidApiKey =>
+        'Your Gemini API key was rejected. Check GEMINI_API_KEY and try again.',
+      GeminiFailureKind.network =>
+        'No internet connection was found. Connect and try again.',
+      GeminiFailureKind.unavailable =>
+        'Gemini is temporarily unavailable. Please try again shortly.',
+      GeminiFailureKind.malformedResponse =>
+        'Gemini returned an unreadable result. Please try again.',
+      GeminiFailureKind.noEventDetected =>
+        'We couldn\'t find an event in that message. Try adding what, when, or where.',
+    };
   }
 }

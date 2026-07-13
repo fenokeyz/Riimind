@@ -17,6 +17,14 @@ class ParsedEvent {
     required this.location,
   });
 
+  /// Whether Gemini could not identify any usable event detail.
+  bool get isEmpty =>
+      title.isEmpty &&
+      description.isEmpty &&
+      date.isEmpty &&
+      time.isEmpty &&
+      location.isEmpty;
+
   /// Build from the JSON returned by Gemini. Tolerant of:
   /// - missing keys (becomes empty string)
   /// - non-string values (stringified)

@@ -1,17 +1,46 @@
-# riimind
+# Riimind
 
-A new Flutter project.
+Riimind turns a natural-language message into a calendar event in a few taps. Paste or share a message, review the details Gemini extracts, make corrections, then open the device calendar to save it.
 
-## Getting Started
+## Requirements
 
-This project is a starting point for a Flutter application.
+- Flutter SDK compatible with Dart `^3.12.2`
+- Android device/emulator for Android sharing and calendar-insert testing
+- A Gemini API key from Google AI Studio
 
-A few resources to get you started if this is your first Flutter project:
+## Setup
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+git clone <repository-url>
+cd riimind
+cp .env.example .env
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Set the following value in `.env`:
+
+```dotenv
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+Then install dependencies and run the app:
+
+```bash
+flutter pub get
+flutter run
+```
+
+## Verify
+
+```bash
+flutter analyze
+flutter test
+```
+
+## MVP flow
+
+1. Paste, import from the clipboard, or share text from an Android app into Riimind.
+2. Tap **Extract Event**.
+3. Review and edit the title, date, time, location, and description.
+4. Tap **Continue** to open the native calendar editor and save the event.
+
+See [HANDOFF.md](HANDOFF.md) for the architecture, package choices, limitations, and implementation decisions.

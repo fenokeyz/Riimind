@@ -47,3 +47,13 @@ final clipboardProvider = FutureProvider<String?>((ref) async {
 /// between app launches — we only want to hide the banner for the lifetime
 /// of this session once the user says "Dismiss".
 final clipboardDismissedProvider = StateProvider<bool>((ref) => false);
+
+/// Replaces the composed input while preserving a natural cursor position.
+///
+/// Clipboard import, paste, and Android sharing all use this one mutation path
+/// so dependent Riverpod state stays synchronised through the controller.
+void replaceInputText(WidgetRef ref, String text) {
+  final controller = ref.read(textControllerProvider);
+  controller.text = text;
+  controller.selection = TextSelection.collapsed(offset: text.length);
+}

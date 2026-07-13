@@ -117,4 +117,26 @@ void main() {
       expect(copy.location, original.location);
     });
   });
+
+  group('ParsedEvent.isEmpty', () {
+    test('is true only when every extracted field is empty', () {
+      const empty = ParsedEvent(
+        title: '',
+        description: '',
+        date: '',
+        time: '',
+        location: '',
+      );
+      const withTitle = ParsedEvent(
+        title: 'Lunch',
+        description: '',
+        date: '',
+        time: '',
+        location: '',
+      );
+
+      expect(empty.isEmpty, isTrue);
+      expect(withTitle.isEmpty, isFalse);
+    });
+  });
 }
