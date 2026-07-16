@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/parsed_event.dart';
 
@@ -12,6 +15,7 @@ enum GeminiFailureKind {
   missingApiKey,
   invalidApiKey,
   network,
+  rateLimit,
   unavailable,
   malformedResponse,
   noEventDetected,
@@ -36,7 +40,10 @@ class GeminiService {
   GeminiService({String? apiKey})
     : _apiKey = apiKey ?? dotenv.env['GEMINI_API_KEY'] ?? '';
 
-  static const String _modelName = 'gemini-3.5-flash';
+  static const List<String> _modelCandidates = [
+    'gemini-1.5-flash',
+    'gemini-2.0-flash',
+  ];
   final String _apiKey;
 
   static const String _systemInstruction = '''
@@ -64,12 +71,6 @@ Rules:
 ''';
 
   Future<ParsedEvent> extractEvent(String text) async {
-    if (_apiKey.isEmpty) {
-      throw GeminiParseException(
-        'Gemini API key missing.',
-        kind: GeminiFailureKind.missingApiKey,
-      );
-    }
     if (text.trim().isEmpty) {
       throw GeminiParseException(
         'Input text is empty.',
@@ -77,40 +78,75 @@ Rules:
       );
     }
 
-    final model = GenerativeModel(
-      model: _modelName,
-      apiKey: _apiKey,
-      systemInstruction: Content.system(_systemInstruction),
-      generationConfig: GenerationConfig(
-        responseMimeType: 'application/json',
-        temperature: 0.1,
-        maxOutputTokens: 512,
-      ),
-    );
+    final proxyUrl = await _loadProxyUrl();
+    if (proxyUrl != null) {
+      return _extractEventWithProxy(text, proxyUrl);
+    }
+
+    if (_apiKey.isEmpty) {
+      throw GeminiParseException(
+        'Gemini API key missing.',
+        kind: GeminiFailureKind.missingApiKey,
+      );
+    }
+
     final now = DateTime.now();
     final prompt =
         'today: ${_formatDate(now)}\ntimezone: ${_localTimezone()}\nmessage: ${text.trim()}';
 
-    final GenerateContentResponse response;
-    try {
-      response = await model.generateContent([Content.text(prompt)]);
-    } on InvalidApiKey {
-      throw GeminiParseException(
-        'The Gemini API key was rejected.',
-        kind: GeminiFailureKind.invalidApiKey,
-      );
-    } on SocketException {
-      throw GeminiParseException(
-        'No network connection is available.',
-        kind: GeminiFailureKind.network,
-      );
-    } on TimeoutException {
-      throw GeminiParseException(
-        'Gemini timed out.',
-        kind: GeminiFailureKind.unavailable,
-      );
-    } on GenerativeAIException {
-      throw GeminiParseException(
+    GenerateContentResponse? response;
+    Object? lastError;
+    for (final modelName in _modelCandidates) {
+      try {
+        final model = GenerativeModel(
+          model: modelName,
+          apiKey: _apiKey,
+          systemInstruction: Content.system(_systemInstruction),
+          generationConfig: GenerationConfig(
+            responseMimeType: 'application/json',
+            temperature: 0.0,
+            maxOutputTokens: 192,
+          ),
+        );
+        response = await model
+            .generateContent([Content.text(prompt)])
+            .timeout(const Duration(seconds: 12));
+        lastError = null;
+        break;
+      } on InvalidApiKey {
+        throw GeminiParseException(
+          'The Gemini API key was rejected.',
+          kind: GeminiFailureKind.invalidApiKey,
+        );
+      } on SocketException {
+        lastError = GeminiParseException(
+          'No network connection is available.',
+          kind: GeminiFailureKind.network,
+        );
+      } on TimeoutException {
+        lastError = GeminiParseException(
+          'Gemini timed out.',
+          kind: GeminiFailureKind.unavailable,
+        );
+      } on GenerativeAIException catch (error) {
+        final details = error.toString().toLowerCase();
+        final isRateLimit = details.contains('429') ||
+            details.contains('quota') ||
+            details.contains('rate limit') ||
+            details.contains('resource exhausted');
+        lastError = GeminiParseException(
+          isRateLimit
+              ? 'Gemini API quota was exceeded for this key.'
+              : 'Gemini is unavailable.',
+          kind: isRateLimit
+              ? GeminiFailureKind.rateLimit
+              : GeminiFailureKind.unavailable,
+        );
+      }
+    }
+
+    if (lastError != null || response == null) {
+      throw lastError ?? GeminiParseException(
         'Gemini is unavailable.',
         kind: GeminiFailureKind.unavailable,
       );
@@ -132,6 +168,52 @@ Rules:
       );
     }
     return event;
+  }
+
+  Future<ParsedEvent> _extractEventWithProxy(String text, String proxyUrl) async {
+    final response = await http
+        .post(
+          Uri.parse(proxyUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'text': text.trim()}),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    if (response.statusCode == 429) {
+      throw GeminiParseException(
+        'Gemini API quota has been reached for this key. Wait a bit or replace the key and try again.',
+        kind: GeminiFailureKind.rateLimit,
+      );
+    }
+
+    if (response.statusCode != 200) {
+      throw GeminiParseException(
+        'Gemini is temporarily unavailable.',
+        kind: GeminiFailureKind.unavailable,
+      );
+    }
+
+    final raw = response.body.trim();
+    if (raw.isEmpty) {
+      throw GeminiParseException(
+        'Gemini returned an empty response.',
+        kind: GeminiFailureKind.noEventDetected,
+      );
+    }
+
+    return _parseJson(raw);
+  }
+
+  Future<String?> _loadProxyUrl() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString('gemini_proxy_url')?.trim();
+      return (value == null || value.isEmpty) ? null : value;
+    } on FlutterError {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
   }
 
   ParsedEvent _parseJson(String raw) {

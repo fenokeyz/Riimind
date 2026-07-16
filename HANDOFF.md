@@ -59,14 +59,13 @@ GEMINI_API_KEY=your_gemini_api_key_here
 3. Gemini extraction, JSON parsing, loading/error handling, and event preview navigation.
 4. Calendar handoff through `add_2_calendar`, including title, description, location, all-day events, a one-hour timed default, platform permission handling, and success/failure feedback.
 5. Editable preview form with text inputs plus native date and time pickers. Continue always reads the edited state.
-6. Android `ACTION_SEND` text sharing directly into the existing Home input.
-7. Material 3 polish: consistent cards, picker affordances, disabled states, loading indicators, and focused dialogs.
-8. Stronger Gemini instructions for relative dates, weekday expressions, common time expressions, all-day events, and non-hallucination.
+6. Material 3 polish: consistent cards, picker affordances, disabled states, loading indicators, and focused dialogs.
+7. Stronger Gemini instructions for relative dates, weekday expressions, common time expressions, all-day events, and non-hallucination.
 
 ## Important implementation decisions
 
 - Input changes use one shared `TextEditingController`; `inputTextProvider` mirrors it so typing, clipboard actions, and sharing stay synchronized.
-- Android shares are adapted to text in `ShareIntentService`, then fed into the existing input state—there is no second app entry point or Home screen.
+- Clipboard import remains the supported text entry path for v1.0; Android share-intent support has been temporarily removed from the app surface.
 - Calendar integration delegates saving to the platform editor. Android opens `ACTION_INSERT` without app calendar permission; iOS requests calendar access only when the editor needs it.
 - An absent time creates an all-day event. A timed event defaults to one hour because the parser does not capture an end time.
 - Gemini errors are classified internally and rendered as friendly messages; raw errors and stack traces are not shown to users.
@@ -84,6 +83,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 - Recurrence rule editing and end-time/duration controls.
 - Saved event history and optional cloud sync.
 - iOS share extension, if iOS sharing is required later.
+- Reintroducing Android share-intent support as a future enhancement once the dependency story is stable.
 
 ## Run the project
 

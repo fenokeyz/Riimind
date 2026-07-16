@@ -140,6 +140,8 @@ class _ExtractEventButtonState extends ConsumerState<ExtractEventButton> {
         'Your Gemini API key was rejected. Check GEMINI_API_KEY and try again.',
       GeminiFailureKind.network =>
         'No internet connection was found. Connect and try again.',
+      GeminiFailureKind.rateLimit =>
+        'Gemini API quota has been reached for this key. Wait a bit or replace the key and try again.',
       GeminiFailureKind.unavailable =>
         'Gemini is temporarily unavailable. Please try again shortly.',
       GeminiFailureKind.malformedResponse =>

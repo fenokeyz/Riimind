@@ -38,9 +38,11 @@ flutter test
 
 ## MVP flow
 
-1. Paste, import from the clipboard, or share text from an Android app into Riimind.
+1. Paste or import text from the clipboard into Riimind.
 2. Tap **Extract Event**.
 3. Review and edit the title, date, time, location, and description.
 4. Tap **Continue** to open the native calendar editor and save the event.
+
+> Share-intent support has been temporarily removed from v1.0. Clipboard import remains the supported workflow for bringing text into the app.
 
 See [HANDOFF.md](HANDOFF.md) for the architecture, package choices, limitations, and implementation decisions.

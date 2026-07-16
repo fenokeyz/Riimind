@@ -193,6 +193,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
     setState(() => _isOpeningCalendar = true);
 
     try {
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
       final opened = await Add2Calendar.addEvent2Cal(_toCalendarEvent());
       if (!opened) {
         throw const _CalendarOpenException(
